@@ -28,9 +28,11 @@ interface Props {
   onToggleDark?: () => void;
   viewportMode?: 'desktop' | 'mobile';
   onToggleViewport?: () => void;
+  /** Real signed-in owner's name. Omit in demo to show the sample owner. */
+  ownerName?: string;
 }
 
-export default function TopBar({ activePage, onNavigate, onMenuToggle, mobileMenuOpen, darkMode, onToggleDark, viewportMode, onToggleViewport }: Props) {
+export default function TopBar({ activePage, onNavigate, onMenuToggle, mobileMenuOpen, darkMode, onToggleDark, viewportMode, onToggleViewport, ownerName }: Props) {
   const { t, lang, toggle } = useLang();
   const { isDemo, isStaging } = useMode();
   // Viewport toggle only available in Demo environment (showcases responsiveness to prospects).
@@ -147,7 +149,7 @@ export default function TopBar({ activePage, onNavigate, onMenuToggle, mobileMen
           title={lang === 'ar' ? 'الإعدادات' : 'Settings'}
           aria-label={lang === 'ar' ? 'إعدادات الحساب' : 'Account settings'}
         >
-          {OWNER.fullName.charAt(0)}
+          {((ownerName ?? OWNER.fullName).trim().charAt(0) || '?').toUpperCase()}
         </button>
       </div>
     </header>

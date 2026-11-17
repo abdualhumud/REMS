@@ -94,12 +94,16 @@ export const STAGING_MOYASAR_TEST_KEY = ''; // empty → DemoCardForm renders in
 
 /** Returns the configured PUBLISHABLE key from localStorage. Never returns sk_*. */
 export function getMoyasarKey(): string {
+  // Build-time publishable key (public by design) — the only way a *customer's* browser
+  // can ever be configured; localStorage is per-browser and is empty for new signups.
+  const envKey = process.env.NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY ?? '';
   try {
     const v = localStorage.getItem(LS_KEY) ?? '';
     // Defence-in-depth: if a sk_* key was somehow planted in storage, refuse to surface it.
-    if (v.startsWith('sk_')) return '';
-    return v;
-  } catch { return ''; }
+    if (v.startsWith('sk_')) return envKey.startsWith('pk_') ? envKey : '';
+    if (v) return v;
+  } catch { /* storage unavailable — fall through to env key */ }
+  return envKey.startsWith('pk_') ? envKey : '';
 }
 
 /**

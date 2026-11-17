@@ -63,6 +63,8 @@ interface Props {
   initialName?: string;
   /** initialEmail: pre-fill Step 2 "Email" from signup. Skipped if a draft exists. */
   initialEmail?: string;
+  /** hasAccount: user already registered (auth gate) — skip username/password and lock the email. */
+  hasAccount?: boolean;
 }
 
 export default function OnboardingPage({
@@ -71,6 +73,7 @@ export default function OnboardingPage({
   showPayment = false,
   initialName,
   initialEmail,
+  hasAccount = false,
 }: Props) {
   // Wipe the persisted draft as soon as the wizard successfully exits —
   // every onComplete code path goes through this wrapper.
@@ -141,7 +144,10 @@ export default function OnboardingPage({
       // Re-merge to preserve future fields and drop any that no longer exist.
       // Always start `password` empty — never restore secrets from disk.
       // Draft values win over seeded values when both exist (user already edited).
-      return { ...seeded, ...saved, password: '' };
+      const merged = { ...seeded, ...saved, password: '' };
+      // Registered users: the signup email is authoritative — a stale draft must not override it.
+      if (hasAccount && initialEmail) merged.email = initialEmail;
+      return merged;
     } catch { return seeded; }
   });
 
@@ -236,8 +242,7 @@ export default function OnboardingPage({
     emailValid &&
     phoneValid &&
     natIdTenDigits &&
-    form.username.trim().length >= 3 &&
-    form.password.trim().length >= 8
+    (hasAccount || (form.username.trim().length >= 3 && form.password.trim().length >= 8))
   );
   const canGoNext =
     (step === 1 && step1Valid) ||
@@ -279,7 +284,7 @@ export default function OnboardingPage({
     else if (showPayment && paySubStep === 'summary') {
       setPaySubStep('checkout');
     } else {
-      if (promoApplied) redeemPromoCode(promoApplied);
+      // Promo is redeemed in handleCheckoutSuccess (payment confirmed) — never here.
       onComplete(selectedPlan, promoApplied);
     }
   };
@@ -301,6 +306,8 @@ export default function OnboardingPage({
       cardCompany: payment?.source?.company,
       cardName:    payment?.source?.name,
     });
+    // Redeem exactly once, at the moment payment is confirmed (not on Apply / not on exit).
+    if (promoApplied) redeemPromoCode(promoApplied);
     setPaySubStep('success');
   }
 
@@ -719,7 +726,8 @@ export default function OnboardingPage({
                           type={f.type}
                           value={form[f.key]} onChange={set(f.key)} placeholder={f.ph}
                           autoComplete={f.autoC}
-                          className={`${INPUT} ${!isStaging ? fieldErr(form[f.key], f.minLen) : ''}`}
+                          readOnly={f.key === 'email' && hasAccount && !!initialEmail}
+                          className={`${INPUT} ${!isStaging ? fieldErr(form[f.key], f.minLen) : ''} ${f.key === 'email' && hasAccount && !!initialEmail ? 'opacity-70 cursor-not-allowed' : ''}`}
                           style={{ direction: 'ltr' }}
                         />
                         {/* Saudi National ID: exactly 10 digits */}
@@ -732,7 +740,8 @@ export default function OnboardingPage({
                     ))}
                   </div>
 
-                  {/* Account Security: Username + Password */}
+                  {/* Account Security: Username + Password (skipped when the user already registered) */}
+                  {!hasAccount && (
                   <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
                     <div className="flex items-center gap-2 mb-3">
                       <div className="w-7 h-7 bg-blue-50 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
@@ -785,6 +794,7 @@ export default function OnboardingPage({
                       </div>
                     </div>
                   </div>
+                  )}
 
                   {/* Bank — Optional */}
                   <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
@@ -875,7 +885,7 @@ export default function OnboardingPage({
                       </div>
                       {/* Enter Dashboard — primary CTA after successful payment */}
                       <button
-                        onClick={() => { if (promoApplied) redeemPromoCode(promoApplied); onComplete(selectedPlan, promoApplied); }}
+                        onClick={() => onComplete(selectedPlan, promoApplied)}
                         className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-extrabold text-sm text-white transition-all hover:opacity-90 shadow-lg shadow-emerald-500/20"
                         style={{ background: 'linear-gradient(135deg,#059669,#10B981)' }}
                       >
@@ -1055,7 +1065,7 @@ export default function OnboardingPage({
                     {/* Enter Dashboard button after payment success */}
                     {step === 3 && showPayment && paySubStep === 'success' ? (
                       <button
-                        onClick={() => { redeemPromoCode(promoApplied); onComplete(selectedPlan, promoApplied); }}
+                        onClick={() => onComplete(selectedPlan, promoApplied)}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 shadow-lg shadow-emerald-500/20"
                         style={{ background: 'linear-gradient(135deg,#059669,#047857)' }}
                       >

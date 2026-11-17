@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import { Icons } from '@/lib/icons';
 import { useLang } from '@/lib/language-context';
+import { useMode } from '@/lib/mode-context';
 import {
   CLEANING_REQUESTS, CLEANING_PROVIDERS,
   type CleaningStatus,
@@ -46,12 +47,17 @@ const STATUS_DOT: Record<CleaningStatus, string> = {
 export default function CleaningPage({ onTriggerBooking }: { onTriggerBooking?: (unitName: string) => void }) {
   const { t, lang } = useLang();
   const tc = t.cleaning;
+  const { isDemo } = useMode();
 
-  // Local mutable state built from mock (so actions work without a backend)
-  const [requests, setRequests] = useState(
-    CLEANING_REQUESTS.map(r => ({ ...r, messages: [...r.messages] }))
+  // Fresh Start (CLAUDE.md Rule 2): mock requests/providers are demo-only.
+  // Production & staging accounts begin with no requests and no fake providers.
+  const providers: typeof CLEANING_PROVIDERS = isDemo ? CLEANING_PROVIDERS : [];
+
+  // Local mutable state (demo: seeded from mock so actions work without a backend)
+  const [requests, setRequests] = useState<typeof CLEANING_REQUESTS>(() =>
+    isDemo ? CLEANING_REQUESTS.map(r => ({ ...r, messages: [...r.messages] })) : []
   );
-  const [selectedId, setSelectedId]     = useState<string>(CLEANING_REQUESTS[0].id);
+  const [selectedId, setSelectedId]     = useState<string>(isDemo ? CLEANING_REQUESTS[0].id : '');
   const [providerFilter, setFilter]     = useState<ProviderFilter>('ALL');
   const [chatInput, setChatInput]       = useState('');
   const [showAssign,  setShowAssign]    = useState(false);
@@ -75,8 +81,8 @@ export default function CleaningPage({ onTriggerBooking }: { onTriggerBooking?: 
 
   // ── KPIs ────────────────────────────────────────────────────────────────
   const activeCount    = requests.filter(r => r.status !== 'INSPECTION_DONE').length;
-  const completedCount = CLEANING_PROVIDERS.reduce((s, p) => s + p.completedToday, 0);
-  const onlineCount    = CLEANING_PROVIDERS.filter(p => p.available).length;
+  const completedCount = providers.reduce((s, p) => s + p.completedToday, 0);
+  const onlineCount    = providers.filter(p => p.available).length;
 
   // ── Actions ─────────────────────────────────────────────────────────────
   function advanceStatus(id: string) {
@@ -101,7 +107,7 @@ export default function CleaningPage({ onTriggerBooking }: { onTriggerBooking?: 
   }
 
   function assignProvider(requestId: string, providerId: string) {
-    const provider = CLEANING_PROVIDERS.find(p => p.id === providerId)!;
+    const provider = providers.find(p => p.id === providerId)!;
     setRequests(prev => prev.map(r => {
       if (r.id !== requestId) return r;
       return {
@@ -162,10 +168,10 @@ export default function CleaningPage({ onTriggerBooking }: { onTriggerBooking?: 
     let assignedProv = null;
     let initialStatus: CleaningStatus = 'PENDING';
     if (newReqForm.autoDispatch) {
-      assignedProv = CLEANING_PROVIDERS.find(p => p.available) ?? null;
+      assignedProv = providers.find(p => p.available) ?? null;
       if (assignedProv) initialStatus = 'ASSIGNED';
     } else if (newReqForm.providerId) {
-      assignedProv = CLEANING_PROVIDERS.find(p => p.id === newReqForm.providerId) ?? null;
+      assignedProv = providers.find(p => p.id === newReqForm.providerId) ?? null;
       if (assignedProv) initialStatus = 'ASSIGNED';
     }
 
@@ -206,12 +212,12 @@ export default function CleaningPage({ onTriggerBooking }: { onTriggerBooking?: 
   const [showDetail, setShowDetail] = useState(false);
 
   // ── Filtered providers for assign modal ─────────────────────────────────
-  const filteredProviders = CLEANING_PROVIDERS.filter(p =>
+  const filteredProviders = providers.filter(p =>
     providerFilter === 'ALL' || p.type === providerFilter
   );
 
   const assignedProvider = selected?.providerId
-    ? CLEANING_PROVIDERS.find(p => p.id === selected.providerId)
+    ? providers.find(p => p.id === selected.providerId)
     : null;
 
   // ── Next action label ───────────────────────────────────────────────────
@@ -256,7 +262,7 @@ export default function CleaningPage({ onTriggerBooking }: { onTriggerBooking?: 
             { icon: Icons.cleaning,   label: tc.activeReq,       value: activeCount,    color: 'text-blue-600',    bg: 'bg-blue-50'    },
             { icon: Icons.sparkles,   label: tc.completedToday,  value: completedCount, color: 'text-emerald-600', bg: 'bg-emerald-50' },
             { icon: Icons.clock,      label: tc.avgDuration,     value: '48 min',       color: 'text-purple-600',  bg: 'bg-purple-50'  },
-            { icon: Icons.userCheck,  label: tc.providersOnline, value: `${onlineCount}/${CLEANING_PROVIDERS.length}`, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { icon: Icons.userCheck,  label: tc.providersOnline, value: `${onlineCount}/${providers.length}`, color: 'text-amber-600', bg: 'bg-amber-50' },
           ].map(({ icon: Icon, label, value, color, bg }) => (
             <div key={label} className="flex items-center gap-2 sm:gap-3 bg-white rounded-xl px-3 sm:px-4 py-3 border border-slate-100">
               <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}>
@@ -601,7 +607,7 @@ export default function CleaningPage({ onTriggerBooking }: { onTriggerBooking?: 
                       <select className="input mt-2" value={newReqForm.providerId}
                         onChange={e => setNewReqForm(p => ({ ...p, providerId: e.target.value }))}>
                         <option value="">{lang === 'ar' ? '— اختر مزوداً —' : '— Select Provider —'}</option>
-                        {CLEANING_PROVIDERS.filter(p => p.available).map(p => (
+                        {providers.filter(p => p.available).map(p => (
                           <option key={p.id} value={p.id}>{p.name} ({p.type})</option>
                         ))}
                       </select>

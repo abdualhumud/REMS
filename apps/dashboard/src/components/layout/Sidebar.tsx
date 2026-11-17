@@ -69,9 +69,12 @@ interface Props {
   onNavigate: (p: string) => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  /** Real signed-in owner's name. Omit in demo to show the sample owner. */
+  ownerName?: string;
 }
 
-export default function Sidebar({ activePage, onNavigate, mobileOpen = false, onMobileClose }: Props) {
+export default function Sidebar({ activePage, onNavigate, mobileOpen = false, onMobileClose, ownerName }: Props) {
+  const displayName = ownerName ?? OWNER.fullName;
   const [collapsed, setCollapsed] = useState(false);
   const { t, lang } = useLang();
   const { isDemo }  = useMode();
@@ -220,11 +223,11 @@ export default function Sidebar({ activePage, onNavigate, mobileOpen = false, on
               className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 text-white"
               style={{ background: 'linear-gradient(135deg,#7C3AED,#6366F1)' }}
             >
-              {OWNER.fullName.charAt(0)}
+              {(displayName.trim().charAt(0) || '?').toUpperCase()}
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <p className="text-xs font-bold text-white truncate leading-none">{OWNER.fullName}</p>
+                <p className="text-xs font-bold text-white truncate leading-none">{displayName || (lang === 'ar' ? 'حسابي' : 'My account')}</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   {lang === 'ar' ? 'مالك العقار' : 'Property Owner'}
                 </p>

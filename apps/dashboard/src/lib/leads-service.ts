@@ -195,12 +195,26 @@ export function validateLeadForm(data: Partial<Lead>): ValidationErrors {
 
 /* ── Main Submission Entry Point ─────────────────────────────────────────── */
 
+/**
+ * Lead IDs must be valid UUIDs — the Supabase `leads.id` column is `uuid`,
+ * so a custom "lead-<ts>-<rand>" string makes the REST insert fail with HTTP 400.
+ */
+function newLeadId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  const b = new Uint8Array(16);
+  c?.getRandomValues ? c.getRandomValues(b) : b.forEach((_, i) => { b[i] = Math.floor(Math.random() * 256); });
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 export async function submitLead(
   data: { name: string; email: string; phone: string; business: string; message: string },
   source: LeadSource,
 ): Promise<SubmitResult> {
   const lead: Lead = {
-    id:        `lead-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id:        newLeadId(),
     ...data,
     source,
     status:    'new',

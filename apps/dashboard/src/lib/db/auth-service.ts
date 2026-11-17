@@ -179,11 +179,20 @@ export async function updateProfile(
 /**
  * Mark onboarding as complete for a user.
  */
-export async function completeOnboarding(userId: string): Promise<void> {
-  await supabase
-    .from('profiles')
-    .update({ onboarding_done: true })
+export async function completeOnboarding(
+  userId: string,
+  plan?: string,
+  promoCode?: string,
+): Promise<void> {
+  // Persist the plan the owner actually paid for, together with the done flag.
+  const patch: Record<string, unknown> = { onboarding_done: true };
+  if (plan) patch.plan = plan;
+  if (promoCode) patch.promo_code = promoCode;
+  const { error } = await (supabase.from('profiles') as ReturnType<typeof supabase.from>)
+    .update(patch)
     .eq('id', userId);
+  // supabase-js resolves (never rejects) on DB errors — surface it so callers can react.
+  if (error) throw new Error(error.message);
 }
 
 /**

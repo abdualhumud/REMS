@@ -19,7 +19,7 @@ import { useLang }       from '@/lib/language-context';
 import { Icons }         from '@/lib/icons';
 import {
   getStagingSession, loginStagingUser, registerStagingUser, logoutStagingUser,
-  stagingOnboardingKey, stagingUnitsKey, type StagingUser,
+  stagingOnboardingKey, stagingUnitsKey, updateStagingUserPlan, type StagingUser,
 } from '@/lib/staging-auth';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
@@ -415,7 +415,7 @@ export default function AppShell() {
       getCurrentAuthUser().then(user => {
         if (user) {
           setStagingUser({ id: user.id, email: user.email, name: user.fullName, companyName: user.companyName } as unknown as StagingUser);
-          if (!user.onboardingDone) setShowOnboarding(true);
+          if (!user.onboardingDone && !localStorage.getItem(`rems-onboarding-done-${user.id}`)) setShowOnboarding(true);
           // Check unit count so StagingEmptyGate shows correctly
           getUnitCount().then(n => setHasUnits(n > 0));
         } else {
@@ -428,7 +428,7 @@ export default function AppShell() {
       const unsub = onAuthStateChange(user => {
         if (!user) { setStagingUser(null); setHasUnits(null); setStagingChecked(true); return; }
         setStagingUser({ id: user.id, email: user.email, name: user.fullName, companyName: user.companyName } as unknown as StagingUser);
-        if (!user.onboardingDone) setShowOnboarding(true);
+        if (!user.onboardingDone && !localStorage.getItem(`rems-onboarding-done-${user.id}`)) setShowOnboarding(true);
         getUnitCount().then(n => setHasUnits(n > 0));
       });
       return unsub;
@@ -477,9 +477,15 @@ export default function AppShell() {
   const completeOnboarding = (plan?: string, promoCode?: string) => {
     if (isSupabaseConfigured() && stagingUser) {
       // Mark onboarding done in Supabase
-      dbCompleteOnboarding(stagingUser.id).catch(() => {/* non-fatal */});
+      const uid = stagingUser.id;
+      dbCompleteOnboarding(uid, plan, promoCode).catch(() => {
+        // Payment already succeeded — don't force the owner through onboarding again
+        // if the profile write failed; remember completion locally as a fallback.
+        try { localStorage.setItem(`rems-onboarding-done-${uid}`, '1'); } catch { /* noop */ }
+      });
     } else if (isStaging && stagingUser) {
       localStorage.setItem(stagingOnboardingKey(stagingUser.id), '1');
+      if (plan) updateStagingUserPlan(stagingUser.id, plan, promoCode ?? '');
     } else {
       localStorage.setItem(ONBOARDING_KEY_PROD, '1');
     }
@@ -498,6 +504,9 @@ export default function AppShell() {
     setShowOnboarding(false);
     setActivePage('overview');
   };
+
+  // Real owner identity for avatar/name (demo keeps the sample owner).
+  const ownerName = isDemo ? undefined : (stagingUser?.name || stagingUser?.email || '');
 
   const navigate = (p: string) => {
     setActivePage(p as Page);
@@ -582,6 +591,7 @@ export default function AppShell() {
         showPayment={true}
         initialName={stagingUser?.name ?? ''}
         initialEmail={stagingUser?.email ?? ''}
+        hasAccount={!!stagingUser}
       />
     );
   }
@@ -663,6 +673,7 @@ export default function AppShell() {
             onToggleDark={() => setDarkMode(v => !v)}
             viewportMode={effectiveViewportMode}
             onToggleViewport={isDemo ? () => setViewportMode(v => v === 'desktop' ? 'mobile' : 'desktop') : undefined}
+          ownerName={ownerName}
           />
         </div>
 
@@ -702,6 +713,7 @@ export default function AppShell() {
         onNavigate={navigate}
         mobileOpen={mobileMenuOpen}
         onMobileClose={() => setMobileMenuOpen(false)}
+        ownerName={ownerName}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -713,6 +725,7 @@ export default function AppShell() {
           onToggleDark={() => setDarkMode(v => !v)}
           viewportMode={effectiveViewportMode}
           onToggleViewport={isDemo ? () => setViewportMode(v => v === 'desktop' ? 'mobile' : 'desktop') : undefined}
+          ownerName={ownerName}
         />
         {isDemo    && <DemoBanner />}
         {isStaging && <StagingBanner onLogout={handleStagingLogout} user={stagingUser} />}

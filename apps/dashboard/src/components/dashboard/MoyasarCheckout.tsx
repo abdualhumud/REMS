@@ -19,6 +19,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useLang } from '@/lib/language-context';
+import { useMode } from '@/lib/mode-context';
 import { isMoyasarConfigured, getMoyasarKey, loadMoyasarForm, type MoyasarPayment } from '@/lib/moyasar-service';
 
 interface MoyasarCheckoutProps {
@@ -403,8 +404,11 @@ function RealMoyasarForm({
 /* ── Main export ─────────────────────────────────────────────── */
 
 export default function MoyasarCheckout(props: MoyasarCheckoutProps) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const { envMode } = useMode();
   const p = t.payment;
+  // The simulated card form accepts any card — it must never be reachable in Production.
+  const gatewayMissing = envMode === 'production' && !isMoyasarConfigured() && !props.overrideKey;
 
   return (
     <div className="space-y-4">
@@ -432,7 +436,15 @@ export default function MoyasarCheckout(props: MoyasarCheckoutProps) {
       </div>
 
       {/* Form */}
-      {(isMoyasarConfigured() || props.overrideKey)
+      {gatewayMissing
+        ? (
+          <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 text-sm text-amber-800 dark:text-amber-200">
+            {lang === 'ar'
+              ? 'بوابة الدفع غير متاحة حالياً. يرجى المحاولة لاحقاً أو التواصل مع الدعم.'
+              : 'The payment gateway is currently unavailable. Please try again later or contact support.'}
+          </div>
+        )
+        : (isMoyasarConfigured() || props.overrideKey)
         ? <RealMoyasarForm {...props} />
         : <DemoCardForm
             amountSAR={props.amountSAR}

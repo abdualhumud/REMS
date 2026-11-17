@@ -66,6 +66,18 @@ function setSession(user: StagingUser): void {
   try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(user)); } catch { /* ignore */ }
 }
 
+/** Persist the plan / promo chosen in onboarding onto the stored staging user + live session. */
+export function updateStagingUserPlan(userId: string, plan: string, promoCode: string): void {
+  const users = getStagingUsers();
+  const idx = users.findIndex(u => u.id === userId);
+  if (idx !== -1) {
+    users[idx] = { ...users[idx], plan, promoCode };
+    saveStagingUsers(users);
+  }
+  const session = getStagingSession();
+  if (session && session.id === userId) setSession({ ...session, plan, promoCode });
+}
+
 export function logoutStagingUser(): void {
   try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
 }
