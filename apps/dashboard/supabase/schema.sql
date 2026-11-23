@@ -31,11 +31,16 @@ create table if not exists public.profiles (
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer as $$
 begin
-  insert into public.profiles (id, email, full_name)
+  -- Sign-up metadata is copied here because with email confirmation ON there is no
+  -- session yet, so the client cannot UPDATE the profile (RLS) right after signUp().
+  insert into public.profiles (id, email, full_name, company_name, plan, promo_code)
   values (
     new.id,
     new.email,
-    coalesce(new.raw_user_meta_data->>'full_name', '')
+    coalesce(new.raw_user_meta_data->>'full_name', ''),
+    nullif(new.raw_user_meta_data->>'company_name', ''),
+    coalesce(nullif(lower(new.raw_user_meta_data->>'plan'), ''), 'basic'),
+    nullif(new.raw_user_meta_data->>'promo_code', '')
   );
   return new;
 end;

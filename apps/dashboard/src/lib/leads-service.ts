@@ -64,6 +64,49 @@ function saveLead(lead: Lead): void {
   localStorage.setItem(LEADS_KEY, JSON.stringify(leads.slice(0, 500)));
 }
 
+/* ── Remote leads (Supabase) — authenticated admin only (RLS) ───────────── */
+
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+
+type LeadRow = {
+  id: string; name: string; email: string; phone: string | null; business: string | null;
+  message: string | null; source: LeadSource; status: LeadStatus; created_at: string;
+};
+
+export async function hasRemoteSession(): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+  const { data } = await supabase.auth.getSession();
+  return !!data.session;
+}
+
+export async function signInRemote(email: string, password: string): Promise<string | null> {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  return error ? error.message : null;
+}
+
+export async function signOutRemote(): Promise<void> { await supabase.auth.signOut(); }
+
+export async function fetchRemoteLeads(): Promise<Lead[]> {
+  const { data, error } = await supabase
+    .from('leads').select('*').order('created_at', { ascending: false }).limit(500);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as LeadRow[]).map(r => ({
+    id: r.id, name: r.name, email: r.email, phone: r.phone ?? '', business: r.business ?? '',
+    message: r.message ?? '', source: r.source, status: r.status, createdAt: r.created_at,
+  }));
+}
+
+export async function updateRemoteLeadStatus(id: string, status: LeadStatus): Promise<void> {
+  const { error } = await (supabase.from('leads') as ReturnType<typeof supabase.from>)
+    .update({ status }).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteRemoteLead(id: string): Promise<void> {
+  const { error } = await supabase.from('leads').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
 /* ── EmailJS REST API ────────────────────────────────────────────────────── */
 
 async function sendEmailJS(lead: Lead): Promise<void> {

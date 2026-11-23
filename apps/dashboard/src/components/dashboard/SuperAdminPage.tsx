@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLang } from '@/lib/language-context';
 import {
   getLeads, updateLeadStatus, deleteLead,
+  hasRemoteSession, signInRemote, signOutRemote, fetchRemoteLeads, updateRemoteLeadStatus, deleteRemoteLead,
   type Lead, type LeadStatus,
 } from '@/lib/leads-service';
 import {
@@ -23,6 +24,7 @@ import {
   type PromoCode,
 } from '@/lib/promo-service';
 import { getStagingAccountSummaries } from '@/lib/staging-auth';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import { MONTHLY_REVENUE } from '@/lib/mock-data';
 import {
   getTransactions, clearTransactions, getTxStatusStyle, getTxMethodIcon,
@@ -1556,19 +1558,53 @@ function LeadsPanel() {
   const [sourceFilter, setSrcFilter] = useState<'all' | 'demo' | 'contact'>('all');
   const [expandId, setExpandId]   = useState<string | null>(null);
 
-  useEffect(() => { setLeads(getLeads()); }, []);
+  // Remote (Supabase) leads: visitors on other devices submit here; RLS lets only a
+  // signed-in admin read them, so the panel offers a sign-in and merges with local leads.
+  const remoteAvailable = isSupabaseConfigured();
+  const [remoteOn,  setRemoteOn]  = useState(false);
+  const [remoteErr, setRemoteErr] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPass,  setAdminPass]  = useState('');
 
-  const refresh = () => setLeads(getLeads());
-
-  const handleStatus = (id: string, status: LeadStatus) => {
-    updateLeadStatus(id, status);
-    refresh();
+  const merge = (remote: Lead[]) => {
+    const local = getLeads();
+    const ids = new Set(remote.map(l => l.id));
+    return [...remote, ...local.filter(l => !ids.has(l.id))]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   };
 
-  const handleDelete = (id: string) => {
+  const refresh = async () => {
+    if (!remoteOn) { setLeads(getLeads()); return; }
+    try { setLeads(merge(await fetchRemoteLeads())); setRemoteErr(''); }
+    catch (e) { setRemoteErr((e as Error).message); setLeads(getLeads()); }
+  };
+
+  useEffect(() => {
+    setLeads(getLeads());
+    if (!remoteAvailable) return;
+    hasRemoteSession().then(ok => { if (ok) setRemoteOn(true); });
+  }, [remoteAvailable]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (remoteOn) void refresh(); }, [remoteOn]);
+
+  const handleRemoteLogin = async () => {
+    const err = await signInRemote(adminEmail.trim(), adminPass);
+    if (err) { setRemoteErr(err); return; }
+    setAdminPass(''); setRemoteErr(''); setRemoteOn(true);
+  };
+
+  const handleStatus = async (id: string, status: LeadStatus) => {
+    updateLeadStatus(id, status);
+    if (remoteOn) { try { await updateRemoteLeadStatus(id, status); } catch (e) { setRemoteErr((e as Error).message); } }
+    void refresh();
+  };
+
+  const handleDelete = async (id: string) => {
     if (!confirm(isAr ? 'هل تريد حذف هذا العميل المحتمل؟' : 'Delete this lead?')) return;
     deleteLead(id);
-    refresh();
+    if (remoteOn) { try { await deleteRemoteLead(id); } catch (e) { setRemoteErr((e as Error).message); } }
+    void refresh();
   };
 
   const exportCsv = () => {
@@ -1606,6 +1642,41 @@ function LeadsPanel() {
 
   return (
     <div style={{ direction: isAr ? 'rtl' : 'ltr' }}>
+      {/* Remote leads (Supabase) sign-in */}
+      {remoteAvailable && (
+        <div className="card p-4 mb-4 flex flex-wrap items-center gap-3">
+          {remoteOn ? (
+            <>
+              <span className="text-xs font-bold text-emerald-600">
+                {isAr ? '✓ متصل بقاعدة البيانات — تظهر جميع الطلبات من كل الأجهزة' : '✓ Connected — showing leads from all devices'}
+              </span>
+              <button onClick={async () => { await signOutRemote(); setRemoteOn(false); setLeads(getLeads()); }}
+                className="ms-auto text-xs font-semibold text-slate-500 hover:text-slate-800">
+                {isAr ? 'تسجيل الخروج' : 'Sign out'}
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-xs text-slate-500">
+                {isAr ? 'سجّل دخول المدير لعرض الطلبات الواردة من كل الأجهزة' : 'Sign in as admin to load leads submitted from all devices'}
+              </span>
+              <input type="email" value={adminEmail} onChange={e => setAdminEmail(e.target.value)}
+                placeholder="admin@…" style={{ direction: 'ltr' }}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs" />
+              <input type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)}
+                placeholder="••••••••" style={{ direction: 'ltr' }}
+                onKeyDown={e => { if (e.key === 'Enter') void handleRemoteLogin(); }}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs" />
+              <button onClick={() => void handleRemoteLogin()}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-bold">
+                {isAr ? 'دخول' : 'Sign in'}
+              </button>
+            </>
+          )}
+          {remoteErr && <span className="w-full text-xs text-red-500 font-semibold">{remoteErr}</span>}
+        </div>
+      )}
+
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         {[

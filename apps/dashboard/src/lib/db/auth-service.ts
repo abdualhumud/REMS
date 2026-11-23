@@ -59,7 +59,7 @@ export async function registerUser(
     email,
     password,
     options: {
-      data: { full_name: fullName },
+      data: { full_name: fullName, company_name: companyName, plan, promo_code: promoCode || '' },
       // Tell Supabase where to redirect after email confirmation.
       // Falls back to the current page URL so it works on all hosts
       // (localhost, GitHub Pages, Vercel).
@@ -83,15 +83,14 @@ export async function registerUser(
     return { ok: false, error: 'Registration failed — please try again.' };
   }
 
-  // Update profile with extra fields (trigger only inserts email + full_name)
-  const profilePatch: Record<string, unknown> = {
-    company_name: companyName,
-    plan,
-    promo_code: promoCode || null,
-  };
-  await (supabase.from('profiles') as ReturnType<typeof supabase.from>)
-    .update(profilePatch)
-    .eq('id', data.user.id);
+  // company_name / plan / promo_code are stored by the DB trigger from the sign-up metadata
+  // above, so they survive even when email confirmation means there is no session yet.
+  // With an immediate session, also patch the row for databases still on the old trigger.
+  if (data.session) {
+    await (supabase.from('profiles') as ReturnType<typeof supabase.from>)
+      .update({ company_name: companyName, plan, promo_code: promoCode || null })
+      .eq('id', data.user.id);
+  }
 
   // When email confirmation is required, data.session is null.
   // Return pendingVerification so the UI can show a "check inbox" screen.
