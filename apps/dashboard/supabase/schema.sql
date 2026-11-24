@@ -252,6 +252,20 @@ $$;
 -- Allow any authenticated user to call the RPC (super-admin or checkout flow)
 grant execute on function public.increment_promo_used_count(text) to authenticated, anon;
 
+-- ── admins ────────────────────────────────────────────────────
+-- Allowlist of admin user ids. RLS on with NO policies = no client access at all;
+-- rows are added only from the SQL Editor:
+--   insert into public.admins (user_id) select id from auth.users where email = 'you@example.com';
+create table if not exists public.admins (
+  user_id uuid primary key references auth.users(id) on delete cascade
+);
+alter table public.admins enable row level security;
+
+create or replace function public.is_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.admins where user_id = auth.uid());
+$$;
+
 -- ── Leads (landing page capture) ─────────────────────────────────────────
 create table if not exists public.leads (
   id          uuid primary key default gen_random_uuid(),
@@ -268,23 +282,28 @@ create table if not exists public.leads (
 
 -- Public INSERT so the landing page (no auth) can create leads
 alter table public.leads enable row level security;
+drop policy if exists "Anyone can submit a lead" on public.leads;
 create policy "Anyone can submit a lead"
   on public.leads for insert
   with check (true);
 
--- Only authenticated users (super-admin) can read, update, and delete leads.
+-- Only admins (rows in public.admins) can read, update, and delete leads.
+-- A plain customer account is 'authenticated' too, so auth.role() is NOT enough.
 -- Anon users (landing page visitors) can only INSERT via the policy above.
+drop policy if exists "Authenticated can read leads" on public.leads;
 create policy "Authenticated can read leads"
   on public.leads for select
-  using (auth.role() = 'authenticated');
+  using (public.is_admin());
 
+drop policy if exists "Authenticated can update leads" on public.leads;
 create policy "Authenticated can update leads"
   on public.leads for update
-  using (auth.role() = 'authenticated');
+  using (public.is_admin());
 
+drop policy if exists "Authenticated can delete leads" on public.leads;
 create policy "Authenticated can delete leads"
   on public.leads for delete
-  using (auth.role() = 'authenticated');
+  using (public.is_admin());
 
 -- Seed default promo codes
 insert into public.promo_codes (code, discount, max_uses, expires_at, active)
